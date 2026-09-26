@@ -1,0 +1,326 @@
+# PT.DEV module catalog — pin versions and per-OS download URLs.
+#
+# PHP Linux builds use shivammathur/php-builder (NTS, not -zts, not -dbgsym).
+# Layout is Debian-style (usr/bin/php8.x); ptdev creates php / php-cgi aliases.
+# Default distro pin: ubuntu24.04 (current LTS; best general glibc baseline).
+# Prefer .tar.xz over .tar.zst for wider extract support.
+#
+# Arch notes:
+# - Windows ARM64: no official PHP/Apache/MariaDB builds — use amd64 under WoA emulation.
+# - macOS PHP: php-builder has no Darwin assets; leave unset until a portable Mac URL is chosen.
+# - MariaDB 11.4.5 (catalog key "mysql", engine mariadb): linux x86_64 + windows x64 only.
+# - Oracle MySQL Community 8.0.41 (engine mysql): windows + linux amd64 from cdn.mysql.com archives.
+# - PostgreSQL 16.15 (engine postgres): theseus-rs binaries (win/linux/darwin amd64+arm64).
+# - Apache: Windows = Apache Lounge; Linux amd64 + Darwin arm64 = nks-hub portable builds.
+#   No official portable httpd for linux/arm64 or darwin/amd64.
+
+composer:
+  version: "2.8.8"
+  artifacts:
+    - os: any
+      arch: any
+      url: "https://getcomposer.org/download/2.8.8/composer.phar"
+      filename: "composer.phar"
+      kind: file
+
+phpmyadmin:
+  version: "5.2.2"
+  artifacts:
+    - os: any
+      arch: any
+      url: "https://files.phpmyadmin.net/phpMyAdmin/5.2.2/phpMyAdmin-5.2.2-all-languages.zip"
+      filename: "phpMyAdmin-5.2.2-all-languages.zip"
+      kind: zip
+      strip_components: 1
+
+php:
+  versions:
+    "5.5":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/archives/php-5.5.38-Win32-VC11-x64.zip"
+          filename: "php-5.5.38-Win32-VC11-x64.zip"
+          kind: zip
+          note: "EOL; Windows amd64 only (no php-builder / no arm64)"
+    "7.2":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/archives/php-7.2.34-Win32-VC15-x64.zip"
+          filename: "php-7.2.34-Win32-VC15-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/7.2/php_7.2+ubuntu24.04.tar.xz"
+          filename: "php_7.2+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/7.2/php_7.2+ubuntu24.04_arm64.tar.xz"
+          filename: "php_7.2+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
+    "8.1":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/php-8.1.34-Win32-vs16-x64.zip"
+          filename: "php-8.1.34-Win32-vs16-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.1/php_8.1+ubuntu24.04.tar.xz"
+          filename: "php_8.1+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.1/php_8.1+ubuntu24.04_arm64.tar.xz"
+          filename: "php_8.1+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
+    "8.2":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/php-8.2.34-Win32-vs16-x64.zip"
+          filename: "php-8.2.34-Win32-vs16-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.2/php_8.2+ubuntu24.04.tar.xz"
+          filename: "php_8.2+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.2/php_8.2+ubuntu24.04_arm64.tar.xz"
+          filename: "php_8.2+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
+    "8.3":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/php-8.3.35-Win32-vs16-x64.zip"
+          filename: "php-8.3.35-Win32-vs16-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.3/php_8.3+ubuntu24.04.tar.xz"
+          filename: "php_8.3+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.3/php_8.3+ubuntu24.04_arm64.tar.xz"
+          filename: "php_8.3+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
+    "8.4":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/php-8.4.26-Win32-vs17-x64.zip"
+          filename: "php-8.4.26-Win32-vs17-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.4/php_8.4+ubuntu24.04.tar.xz"
+          filename: "php_8.4+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/8.4/php_8.4+ubuntu24.04_arm64.tar.xz"
+          filename: "php_8.4+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
+
+apache:
+  version: "2.4.68"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.68-260920-Win64-VS18.zip"
+      filename: "httpd-2.4.68-Win64-VS18.zip"
+      kind: zip
+    # Official ASF dist is source-only. Portable Linux/macOS binaries from nks-hub
+    # (bin/httpd + modules). No linux/arm64 or darwin/amd64 assets in that release.
+    - os: linux
+      arch: amd64
+      url: "https://github.com/nks-hub/webdev-console-binaries/releases/download/binaries-apache-2.4.66/httpd-2.4.66-linux-x64.tar.xz"
+      filename: "httpd-2.4.66-linux-x64.tar.xz"
+      kind: tar.xz
+      note: "portable binary 2.4.66 (nks-hub); ASF ships source only"
+    - os: darwin
+      arch: arm64
+      url: "https://github.com/nks-hub/webdev-console-binaries/releases/download/binaries-apache-2.4.66/httpd-2.4.66-macos-arm64.tar.xz"
+      filename: "httpd-2.4.66-macos-arm64.tar.xz"
+      kind: tar.xz
+      note: "portable binary 2.4.66 (nks-hub); ASF ships source only"
+
+# MariaDB — default engine (config engine: mariadb). Catalog key stays "mysql" for cache paths.
+mysql:
+  version: "11.4.5"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://archive.mariadb.org/mariadb-11.4.5/winx64-packages/mariadb-11.4.5-winx64.zip"
+      filename: "mariadb-11.4.5-winx64.zip"
+      kind: zip
+      strip_components: 1
+    - os: linux
+      arch: amd64
+      url: "https://archive.mariadb.org/mariadb-11.4.5/bintar-linux-systemd-x86_64/mariadb-11.4.5-linux-systemd-x86_64.tar.gz"
+      filename: "mariadb-11.4.5-linux-systemd-x86_64.tar.gz"
+      kind: tar.gz
+      strip_components: 1
+    # No linux-arm64 / darwin / windows-arm64 packages in mariadb-11.4.5 archive listing.
+
+# Oracle MySQL Community — config engine: mysql
+mysql-community:
+  version: "8.0.41"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://cdn.mysql.com/archives/mysql-8.0/mysql-8.0.41-winx64.zip"
+      filename: "mysql-8.0.41-winx64.zip"
+      kind: zip
+      strip_components: 1
+    - os: linux
+      arch: amd64
+      url: "https://cdn.mysql.com/archives/mysql-8.0/mysql-8.0.41-linux-glibc2.17-x86_64.tar.xz"
+      filename: "mysql-8.0.41-linux-glibc2.17-x86_64.tar.xz"
+      kind: tar.xz
+      strip_components: 1
+      note: "glibc 2.17+; ~860MB archive"
+
+# PostgreSQL — config engine: postgres (theseus-rs portable builds)
+postgres:
+  version: "16.15.0"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.15.0/postgresql-16.15.0-x86_64-pc-windows-msvc.zip"
+      filename: "postgresql-16.15.0-x86_64-pc-windows-msvc.zip"
+      kind: zip
+      strip_components: 1
+    - os: linux
+      arch: amd64
+      url: "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.15.0/postgresql-16.15.0-x86_64-unknown-linux-gnu.tar.gz"
+      filename: "postgresql-16.15.0-x86_64-unknown-linux-gnu.tar.gz"
+      kind: tar.gz
+      strip_components: 1
+    - os: linux
+      arch: arm64
+      url: "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.15.0/postgresql-16.15.0-aarch64-unknown-linux-gnu.tar.gz"
+      filename: "postgresql-16.15.0-aarch64-unknown-linux-gnu.tar.gz"
+      kind: tar.gz
+      strip_components: 1
+    - os: darwin
+      arch: amd64
+      url: "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.15.0/postgresql-16.15.0-x86_64-apple-darwin.tar.gz"
+      filename: "postgresql-16.15.0-x86_64-apple-darwin.tar.gz"
+      kind: tar.gz
+      strip_components: 1
+    - os: darwin
+      arch: arm64
+      url: "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.15.0/postgresql-16.15.0-aarch64-apple-darwin.tar.gz"
+      filename: "postgresql-16.15.0-aarch64-apple-darwin.tar.gz"
+      kind: tar.gz
+      strip_components: 1
+
+mailpit:
+  version: "1.24.1"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-windows-amd64.zip"
+      filename: "mailpit-windows-amd64.zip"
+      kind: zip
+    - os: windows
+      arch: arm64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-windows-arm64.zip"
+      filename: "mailpit-windows-arm64.zip"
+      kind: zip
+    - os: linux
+      arch: amd64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-linux-amd64.tar.gz"
+      filename: "mailpit-linux-amd64.tar.gz"
+      kind: tar.gz
+    - os: linux
+      arch: arm64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-linux-arm64.tar.gz"
+      filename: "mailpit-linux-arm64.tar.gz"
+      kind: tar.gz
+    - os: darwin
+      arch: arm64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-darwin-arm64.tar.gz"
+      filename: "mailpit-darwin-arm64.tar.gz"
+      kind: tar.gz
+    - os: darwin
+      arch: amd64
+      url: "https://github.com/axllent/mailpit/releases/download/v1.24.1/mailpit-darwin-amd64.tar.gz"
+      filename: "mailpit-darwin-amd64.tar.gz"
+      kind: tar.gz
+
+mkcert:
+  version: "1.4.4"
+  artifacts:
+    - os: windows
+      arch: amd64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-windows-amd64.exe"
+      filename: "mkcert.exe"
+      kind: file
+    - os: windows
+      arch: arm64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-windows-arm64.exe"
+      filename: "mkcert.exe"
+      kind: file
+    - os: linux
+      arch: amd64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64"
+      filename: "mkcert"
+      kind: file
+    - os: linux
+      arch: arm64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-arm64"
+      filename: "mkcert"
+      kind: file
+    - os: darwin
+      arch: arm64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-arm64"
+      filename: "mkcert"
+      kind: file
+    - os: darwin
+      arch: amd64
+      url: "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-amd64"
+      filename: "mkcert"
+      kind: file
+
+xdebug:
+  # Windows DLLs must match PHP: TS + VS16 (8.1–8.3) or VS17 (8.4+).
+  # Source: https://xdebug.org/download — use xdebug.org/files (not downloads.xdebug.org).
+  # Linux/macOS: no prebuilt DLL; install via pecl against the cached PHP.
+  versions:
+    "8.1":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://xdebug.org/files/php_xdebug-3.5.3-8.1-ts-vs16-x86_64.dll"
+          filename: "php_xdebug.dll"
+          kind: file
+    "8.2":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://xdebug.org/files/php_xdebug-3.5.3-8.2-ts-vs16-x86_64.dll"
+          filename: "php_xdebug.dll"
+          kind: file
+    "8.3":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://xdebug.org/files/php_xdebug-3.5.3-8.3-ts-vs16-x86_64.dll"
+          filename: "php_xdebug.dll"
+          kind: file
+    "8.4":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://xdebug.org/files/php_xdebug-3.5.3-8.4-ts-vs17-x86_64.dll"
+          filename: "php_xdebug.dll"
+          kind: file

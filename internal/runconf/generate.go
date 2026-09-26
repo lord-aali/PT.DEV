@@ -1,0 +1,508 @@
+package runconf
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"strings"
+
+	"github.com/pt-dev/ptdev/internal/config"
+	"github.com/pt-dev/ptdev/internal/modules"
+)
+
+// Generate writes Apache/PHP/MySQL/phpMyAdmin configs under .pt.dev/runtime.
+func Generate(cfg *config.Config, paths *modules.Paths) error {
+	rt := cfg.RuntimePath()
+	if err := os.MkdirAll(rt, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cfg.LogsPath(), 0o755); err != nil {
+		return err
+	}
+	for _, d := range []string{cfg.SessionsPath(), cfg.UploadTmpPath(), cfg.PMATempPath()} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return err
+		}
+	}
+
+	if cfg.PHP.Enabled {
+		if err := writePHPIni(cfg, paths); err != nil {
+			return err
+		}
+		if err := writePHPInfo(cfg); err != nil {
+			return err
+		}
+		if err := writePHPCGIWrapper(cfg, paths); err != nil {
+			return err
+		}
+		removeStubPHPInfoIndex(cfg)
+	}
+	if cfg.MySQL.Enabled {
+		if cfg.MySQL.IsMySQLFamily() {
+			if err := writeMyCNF(cfg, paths); err != nil {
+				return err
+			}
+		}
+	}
+	if cfg.Apache.Enabled {
+		if err := writeHTTPD(cfg, paths); err != nil {
+			return err
+		}
+	}
+	if cfg.PHP.Enabled && cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() && paths.PHPMyAdmin != "" {
+		if err := writePMAConfig(cfg, paths); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writePHPInfo(cfg *config.Config) error {
+	content := "<?php\n// PT.DEV — available at /.info\nphpinfo();\n"
+	return os.WriteFile(filepath.Join(cfg.RuntimePath(), "phpinfo.php"), []byte(content), 0o644)
+}
+
+// writePHPCGIWrapper stages php-cgi + php.ini under runtime/cgi so the CGI
+// binary loads our ini from its own directory (Apache CGI often skips PHPRC).
+func writePHPCGIWrapper(cfg *config.Config, paths *modules.Paths) error {
+	dir := filepath.Join(cfg.RuntimePath(), "cgi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	phpCGI := paths.PHPBin
+	if goruntime.GOOS == "windows" {
+		cand := filepath.Join(filepath.Dir(paths.PHPBin), "php-cgi.exe")
+		if _, err := os.Stat(cand); err == nil {
+			phpCGI = cand
+		}
+	} else if p, err := modules.FindBinary(paths.PHP, "php-cgi"); err == nil {
+		phpCGI = p
+	}
+
+	iniSrc := filepath.Join(cfg.RuntimePath(), "php.ini")
+	if err := copyFileBytes(iniSrc, filepath.Join(dir, "php.ini")); err != nil {
+		return fmt.Errorf("stage php.ini for cgi: %w", err)
+	}
+
+	cgiDst := filepath.Join(dir, PHPCGIWrapperName())
+	_ = os.Remove(cgiDst)
+	if err := os.Link(phpCGI, cgiDst); err != nil {
+		if err := copyFileBytes(phpCGI, cgiDst); err != nil {
+			return fmt.Errorf("stage php-cgi: %w", err)
+		}
+	}
+	if goruntime.GOOS != "windows" {
+		_ = os.Chmod(cgiDst, 0o755)
+	}
+	return nil
+}
+
+func copyFileBytes(src, dst string) error {
+	in, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, in, 0o755)
+}
+
+// PHPCGIWrapperPath is the staged cgi binary path.
+func PHPCGIWrapperPath(cfg *config.Config) string {
+	return filepath.Join(cfg.RuntimePath(), "cgi", PHPCGIWrapperName())
+}
+
+// PHPCGIWrapperName is the basename Apache Action invokes.
+func PHPCGIWrapperName() string {
+	if goruntime.GOOS == "windows" {
+		return "php-cgi.exe"
+	}
+	return "php-cgi"
+}
+
+// removeStubPHPInfoIndex deletes a leftover wizard stub so / can directory-list.
+func removeStubPHPInfoIndex(cfg *config.Config) {
+	index := filepath.Join(cfg.DocrootAbs(), "index.php")
+	data, err := os.ReadFile(index)
+	if err != nil {
+		return
+	}
+	body := strings.TrimSpace(string(data))
+	body = strings.TrimPrefix(body, "<?php")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, "?>")
+	body = strings.TrimSpace(body)
+	// Strip comments
+	for _, p := range []string{"// PT.DEV", "//"} {
+		if strings.HasPrefix(body, p) {
+			if i := strings.Index(body, "\n"); i >= 0 {
+				body = strings.TrimSpace(body[i+1:])
+			}
+		}
+	}
+	normalized := strings.ReplaceAll(body, " ", "")
+	normalized = strings.ReplaceAll(normalized, "\r", "")
+	normalized = strings.ReplaceAll(normalized, "\n", "")
+	normalized = strings.TrimSuffix(normalized, ";")
+	if normalized == "phpinfo()" || normalized == "phpinfo();" {
+		_ = os.Remove(index)
+	}
+}
+
+func writePHPIni(cfg *config.Config, paths *modules.Paths) error {
+	extDir := filepath.Join(paths.PHP, "ext")
+	var xdebug string
+	if cfg.PHP.Xdebug && paths.XdebugDLL != "" {
+		xdebug = fmt.Sprintf("\nzend_extension=%s\nxdebug.mode=debug\nxdebug.start_with_request=trigger\n", filepath.ToSlash(paths.XdebugDLL))
+	}
+	sessions := filepath.ToSlash(cfg.SessionsPath())
+	uploads := filepath.ToSlash(cfg.UploadTmpPath())
+
+	exts := "extension=openssl\nextension=mbstring\nextension=curl\nextension=fileinfo\n"
+	if cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() {
+		exts = "extension=mysqli\nextension=pdo_mysql\n" + exts
+	}
+	if cfg.MySQL.Enabled && cfg.MySQL.IsPostgres() {
+		exts = "extension=pgsql\nextension=pdo_pgsql\n" + exts
+	}
+
+	content := fmt.Sprintf(`; Generated by PT.DEV — do not edit while running
+display_errors = On
+display_startup_errors = On
+error_reporting = E_ALL
+log_errors = On
+error_log = %s
+extension_dir = "%s"
+%sdate.timezone = UTC
+memory_limit = 512M
+max_execution_time = 300
+max_input_time = 300
+post_max_size = 512M
+upload_max_filesize = 512M
+max_file_uploads = 100
+session.save_handler = files
+session.save_path = "%s"
+session.use_strict_mode = 1
+sys_temp_dir = "%s"
+upload_tmp_dir = "%s"
+%s
+`, filepath.ToSlash(filepath.Join(cfg.LogsPath(), "php.log")), filepath.ToSlash(extDir), exts, sessions, uploads, uploads, xdebug)
+	return os.WriteFile(filepath.Join(cfg.RuntimePath(), "php.ini"), []byte(content), 0o644)
+}
+
+func writeMyCNF(cfg *config.Config, paths *modules.Paths) error {
+	datadir := filepath.ToSlash(cfg.DBDataPath())
+	basedir := filepath.ToSlash(paths.MySQL)
+	content := fmt.Sprintf(`[mysqld]
+basedir=%s
+datadir=%s
+port=%d
+bind-address=127.0.0.1
+innodb_buffer_pool_size=128M
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+log-error=%s
+
+[client]
+port=%d
+host=127.0.0.1
+`, basedir, datadir, cfg.MySQL.Port, filepath.ToSlash(filepath.Join(cfg.LogsPath(), "mysql.log")), cfg.MySQL.Port)
+	return os.WriteFile(filepath.Join(cfg.RuntimePath(), "my.cnf"), []byte(content), 0o644)
+}
+
+func apacheServerRoot(paths *modules.Paths) string {
+	root := paths.Apache
+	if _, err := os.Stat(filepath.Join(root, "conf")); err == nil {
+		return root
+	}
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(strings.ToLower(e.Name()), "apache") {
+			return filepath.Join(root, e.Name())
+		}
+	}
+	return root
+}
+
+func loadModuleLine(serverRoot, name, file string) string {
+	so := filepath.Join(serverRoot, "modules", file)
+	if _, err := os.Stat(so); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("LoadModule %s modules/%s\n", name, file)
+}
+
+func writeHTTPD(cfg *config.Config, paths *modules.Paths) error {
+	docroot := filepath.ToSlash(cfg.DocrootAbs())
+	serverRoot := apacheServerRoot(paths)
+	serverRootSlash := filepath.ToSlash(serverRoot)
+
+	phpCGI := filepath.ToSlash(paths.PHPBin)
+	if goruntime.GOOS == "windows" {
+		cgi := filepath.Join(filepath.Dir(paths.PHPBin), "php-cgi.exe")
+		if _, err := os.Stat(cgi); err == nil {
+			phpCGI = filepath.ToSlash(cgi)
+		}
+	} else if p, err := modules.FindBinary(paths.PHP, "php-cgi"); err == nil {
+		phpCGI = filepath.ToSlash(p)
+	}
+	_ = phpCGI
+
+	wrapperDir := filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "cgi"))
+	wrapperName := PHPCGIWrapperName()
+	phprc := filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "cgi")) // ini lives next to staged php-cgi
+	phpDir := filepath.Dir(paths.PHPBin)
+	cgiPath := phpDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	cgiPathEsc := strings.ReplaceAll(cgiPath, `"`, "")
+
+	var mods strings.Builder
+	type mod struct{ name, file string }
+	wanted := []mod{
+		{"access_compat_module", "mod_access_compat.so"},
+		{"authn_core_module", "mod_authn_core.so"},
+		{"authz_core_module", "mod_authz_core.so"},
+		{"authz_host_module", "mod_authz_host.so"},
+		{"dir_module", "mod_dir.so"},
+		{"mime_module", "mod_mime.so"},
+		{"autoindex_module", "mod_autoindex.so"},
+		{"rewrite_module", "mod_rewrite.so"},
+		{"headers_module", "mod_headers.so"},
+		{"expires_module", "mod_expires.so"},
+		{"alias_module", "mod_alias.so"},
+		{"env_module", "mod_env.so"},
+		{"setenvif_module", "mod_setenvif.so"},
+		{"log_config_module", "mod_log_config.so"},
+		{"actions_module", "mod_actions.so"},
+		{"cgi_module", "mod_cgi.so"},
+	}
+	// MPM: Apache Lounge Win builds bake mpm_winnt into httpd.exe (no .so).
+	// Linux portable builds may ship prefork/event as .so.
+	if goruntime.GOOS != "windows" {
+		wanted = append([]mod{
+			{"mpm_prefork_module", "mod_mpm_prefork.so"},
+			{"mpm_event_module", "mod_mpm_event.so"},
+		}, wanted...)
+	}
+	mpmLoaded := false
+	for _, m := range wanted {
+		line := loadModuleLine(serverRoot, m.name, m.file)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(m.name, "mpm_") {
+			if mpmLoaded {
+				continue
+			}
+			mpmLoaded = true
+		}
+		mods.WriteString(line)
+	}
+
+	// Staged php-cgi + php.ini in runtime/cgi; PATH finds PHP DLLs.
+	phpHandler := fmt.Sprintf(`SetEnv PHPRC "%s"
+SetEnv PHP_INI_SCAN_DIR ""
+SetEnv PATH "%s"
+ScriptAlias /ptdev-cgi/ "%s/"
+Action application/x-httpd-php "/ptdev-cgi/%s"
+AddType application/x-httpd-php .php
+<Directory "%s">
+    Require all granted
+    Options ExecCGI
+    SetHandler cgi-script
+</Directory>
+<FilesMatch \.php$>
+    SetHandler application/x-httpd-php
+</FilesMatch>
+`, phprc, cgiPathEsc, wrapperDir, wrapperName, wrapperDir)
+
+	// Prefer mod_fcgid when present
+	if line := loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so"); line != "" {
+		mods.WriteString(line)
+		wrap := filepath.ToSlash(PHPCGIWrapperPath(cfg))
+		phpHandler = fmt.Sprintf(`SetEnv PHPRC "%s"
+SetEnv PHP_INI_SCAN_DIR ""
+FcgidInitialEnv PHPRC %s
+FcgidInitialEnv PHP_INI_SCAN_DIR ""
+FcgidMaxRequestLen 536870912
+FcgidIOTimeout 300
+FcgidWrapper "%s" .php
+<FilesMatch \.php$>
+    SetHandler fcgid-script
+</FilesMatch>
+`, phprc, phprc, wrap)
+	}
+
+	pmaAlias := ""
+	if paths.PHPMyAdmin != "" {
+		pmaAlias = fmt.Sprintf(`
+Alias /phpmyadmin "%s"
+<Directory "%s">
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+`, filepath.ToSlash(paths.PHPMyAdmin), filepath.ToSlash(paths.PHPMyAdmin))
+	}
+
+	phpInfoAlias := ""
+	if cfg.PHP.Enabled {
+		infoFile := filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "phpinfo.php"))
+		rtDir := filepath.ToSlash(cfg.RuntimePath())
+		// /.info has no .php extension — force the PHP handler via Location.
+		phpInfoAlias = fmt.Sprintf(`
+Alias /.info "%s"
+<Directory "%s">
+    Require all granted
+    AllowOverride None
+</Directory>
+<Location "/.info">
+    SetHandler application/x-httpd-php
+</Location>
+`, infoFile, rtDir)
+	}
+
+	sslBlock := ""
+	cert := filepath.Join(cfg.RuntimePath(), "cert.pem")
+	key := filepath.Join(cfg.RuntimePath(), "key.pem")
+	if cfg.Apache.HTTPS {
+		if line := loadModuleLine(serverRoot, "ssl_module", "mod_ssl.so"); line != "" {
+			if _, err := os.Stat(cert); err == nil {
+				httpsPort := cfg.Apache.Port
+				if httpsPort == 8080 {
+					httpsPort = 8443
+				}
+				sslBlock = line + fmt.Sprintf(`
+Listen %d
+<VirtualHost *:%d>
+    DocumentRoot "%s"
+    SSLEngine on
+    SSLCertificateFile "%s"
+    SSLCertificateKeyFile "%s"
+</VirtualHost>
+`, httpsPort, httpsPort, docroot, filepath.ToSlash(cert), filepath.ToSlash(key))
+			}
+		}
+	}
+
+	typesConfig := "conf/mime.types"
+	if _, err := os.Stat(filepath.Join(serverRoot, "conf", "mime.types")); err != nil {
+		typesConfig = ""
+	}
+	typesLine := ""
+	if typesConfig != "" {
+		typesLine = "TypesConfig " + typesConfig
+	}
+
+	content := fmt.Sprintf(`# Generated by PT.DEV
+Define SRVROOT "%s"
+ServerRoot "${SRVROOT}"
+Listen %s
+ServerName localhost
+DocumentRoot "%s"
+LimitRequestBody 0
+
+%s
+%s
+
+DirectoryIndex index.php index.html
+
+IndexOptions FancyIndexing HTMLTable NameWidth=*
+IndexIgnore .pt.dev .git .env
+
+<Directory "%s">
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+
+%s
+
+%s
+%s
+%s
+
+ErrorLog "%s"
+LogFormat "%%h %%l %%u %%t \"%%r\" %%>s %%b" common
+CustomLog "%s" common
+PidFile "%s"
+`,
+		serverRootSlash,
+		cfg.Apache.HTTPDListen(),
+		docroot,
+		mods.String(),
+		typesLine,
+		docroot,
+		phpHandler,
+		phpInfoAlias,
+		pmaAlias,
+		sslBlock,
+		filepath.ToSlash(filepath.Join(cfg.LogsPath(), "apache.log")),
+		filepath.ToSlash(filepath.Join(cfg.LogsPath(), "apache-access.log")),
+		filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "httpd.pid")),
+	)
+
+	return os.WriteFile(filepath.Join(cfg.RuntimePath(), "httpd.conf"), []byte(content), 0o644)
+}
+
+func writePMAConfig(cfg *config.Config, paths *modules.Paths) error {
+	secret := make([]byte, 16)
+	_, _ = rand.Read(secret)
+	blowfish := hex.EncodeToString(secret)
+	allowNoPass := "false"
+	if cfg.MySQL.Password == "" {
+		allowNoPass = "true"
+	}
+	tempDir := filepath.ToSlash(cfg.PMATempPath())
+	content := fmt.Sprintf(`<?php
+// Generated by PT.DEV — auto-login (dev only)
+$cfg['blowfish_secret'] = '%s';
+$i = 0;
+$i++;
+$cfg['Servers'][$i]['auth_type'] = 'config';
+$cfg['Servers'][$i]['host'] = '127.0.0.1';
+$cfg['Servers'][$i]['port'] = '%d';
+$cfg['Servers'][$i]['user'] = '%s';
+$cfg['Servers'][$i]['password'] = '%s';
+$cfg['Servers'][$i]['AllowNoPassword'] = %s;
+$cfg['Servers'][$i]['compress'] = false;
+$cfg['UploadDir'] = '';
+$cfg['SaveDir'] = '';
+$cfg['TempDir'] = '%s';
+$cfg['ExecTimeLimit'] = 300;
+$cfg['MemoryLimit'] = '512M';
+$cfg['LoginCookieValidity'] = 86400;
+`, blowfish, cfg.MySQL.Port, escapePHP(cfg.MySQL.User), escapePHP(cfg.MySQL.Password), allowNoPass, escapePHP(tempDir))
+
+	rt := filepath.Join(cfg.RuntimePath(), "phpmyadmin-config.inc.php")
+	if err := os.WriteFile(rt, []byte(content), 0o644); err != nil {
+		return err
+	}
+	target := filepath.Join(paths.PHPMyAdmin, "config.inc.php")
+	return os.WriteFile(target, []byte(content), 0o644)
+}
+
+func escapePHP(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `'`, `\'`)
+}
+
+// HTTPDConf returns path to generated httpd.conf.
+func HTTPDConf(cfg *config.Config) string {
+	return filepath.Join(cfg.RuntimePath(), "httpd.conf")
+}
+
+// MyCNF returns path to generated my.cnf.
+func MyCNF(cfg *config.Config) string {
+	return filepath.Join(cfg.RuntimePath(), "my.cnf")
+}
+
+// PHPIni returns path to generated php.ini.
+func PHPIni(cfg *config.Config) string {
+	return filepath.Join(cfg.RuntimePath(), "php.ini")
+}
+
+// ApacheServerRoot exposes resolved ServerRoot for service startup cwd.
+func ApacheServerRoot(paths *modules.Paths) string {
+	return apacheServerRoot(paths)
+}
