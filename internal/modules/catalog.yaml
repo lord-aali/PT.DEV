@@ -151,8 +151,8 @@ apache:
   artifacts:
     - os: windows
       arch: amd64
-      url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.68-260920-Win64-VS18.zip"
-      filename: "httpd-2.4.68-Win64-VS18.zip"
+      url: "https://github.com/lord-aali/pt.dev.binaries/releases/download/apache2.4-windows/apache2.4-windows.zip"
+      filename: "apache2.4-windows.zip"
       kind: zip
     - os: linux
       arch: amd64
