@@ -123,6 +123,9 @@ func RunInteractive() error {
 		dbName = ask("Database name", name)
 	}
 
+	phpInfoOn := askBool("Enable /.info (phpinfo)", true)
+	phpMyAdminOn := askBool("Enable /phpmyadmin/", true)
+
 	mailpit := askBool("Enable Mailpit (dev mail catcher)", false)
 	pretty := ask("Pretty URL (e.g. myapp.test, empty to skip)", "")
 
@@ -142,6 +145,8 @@ func RunInteractive() error {
 	cfg.MySQL.Database = dbName
 	cfg.Mailpit.Enabled = mailpit
 	cfg.PrettyURL = pretty
+	cfg.PHPInfo = config.BoolPtr(phpInfoOn)
+	cfg.PHPMyAdmin = config.BoolPtr(phpMyAdminOn)
 
 	fmt.Println()
 	fmt.Printf("Create project %q at %s ?\n", name, location)
@@ -169,6 +174,11 @@ func RunInteractive() error {
 
 	logx.Success("project created: %s", location)
 	logx.Info("launch with: ptdev launch %q", location)
-	logx.Info("phpinfo will be at /.info after launch")
+	if phpInfoOn {
+		logx.Info("phpinfo will be at /.info after launch")
+	}
+	if phpMyAdminOn {
+		logx.Info("phpMyAdmin will be at /phpmyadmin/ after launch")
+	}
 	return nil
 }

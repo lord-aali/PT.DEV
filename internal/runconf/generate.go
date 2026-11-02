@@ -32,8 +32,10 @@ func Generate(cfg *config.Config, paths *modules.Paths) error {
 		if err := writePHPIni(cfg, paths); err != nil {
 			return err
 		}
-		if err := writePHPInfo(cfg); err != nil {
-			return err
+		if cfg.PHPInfoEnabled() {
+			if err := writePHPInfo(cfg); err != nil {
+				return err
+			}
 		}
 		if err := writePHPCGIWrapper(cfg, paths); err != nil {
 			return err
@@ -52,7 +54,7 @@ func Generate(cfg *config.Config, paths *modules.Paths) error {
 			return err
 		}
 	}
-	if cfg.PHP.Enabled && cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() && paths.PHPMyAdmin != "" {
+	if cfg.PHP.Enabled && cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() && cfg.PHPMyAdminEnabled() && paths.PHPMyAdmin != "" {
 		if err := writePMAConfig(cfg, paths); err != nil {
 			return err
 		}
@@ -335,7 +337,7 @@ FcgidWrapper "%s" .php
 	}
 
 	pmaAlias := ""
-	if paths.PHPMyAdmin != "" {
+	if cfg.PHPMyAdminEnabled() && paths.PHPMyAdmin != "" {
 		pmaAlias = fmt.Sprintf(`
 Alias /phpmyadmin "%s"
 <Directory "%s">
@@ -347,7 +349,7 @@ Alias /phpmyadmin "%s"
 	}
 
 	phpInfoAlias := ""
-	if cfg.PHP.Enabled {
+	if cfg.PHP.Enabled && cfg.PHPInfoEnabled() {
 		infoFile := filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "phpinfo.php"))
 		rtDir := filepath.ToSlash(cfg.RuntimePath())
 		// /.info has no .php extension — force the PHP handler via Location.

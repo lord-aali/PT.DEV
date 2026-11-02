@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	DirName     = ".pt.dev"
-	ConfigFile  = "config.yaml"
-	DatabaseSQL = "database.sql"
-	MySQLData   = "mysql-data"
+	DirName      = ".pt.dev"
+	ConfigFile   = "config.yaml"
+	DatabaseSQL  = "database.sql"
+	MySQLData    = "mysql-data"
 	PostgresData = "postgres-data"
-	RuntimeDir  = "runtime"
-	LogsDir     = "logs"
-	TmpDir      = "tmp"
-	LockFile    = "launch.lock"
+	RuntimeDir   = "runtime"
+	LogsDir      = "logs"
+	TmpDir       = "tmp"
+	LockFile     = "launch.lock"
 
 	EngineMariaDB  = "mariadb"
 	EngineMySQL    = "mysql" // Oracle MySQL Community
@@ -27,15 +27,38 @@ const (
 
 // Config is the per-project PT.DEV configuration.
 type Config struct {
-	Version   int      `yaml:"version"`
-	Name      string   `yaml:"name"`
-	Location  string   `yaml:"location"`
-	Docroot   string   `yaml:"docroot"`
-	PHP       PHP      `yaml:"php"`
-	Apache    Apache   `yaml:"apache"`
-	MySQL     MySQL    `yaml:"mysql"`
-	Mailpit   Mailpit  `yaml:"mailpit"`
-	PrettyURL string   `yaml:"pretty_url"`
+	Version   int     `yaml:"version"`
+	Name      string  `yaml:"name"`
+	Location  string  `yaml:"location"`
+	Docroot   string  `yaml:"docroot"`
+	PHP       PHP     `yaml:"php"`
+	Apache    Apache  `yaml:"apache"`
+	MySQL     MySQL   `yaml:"mysql"`
+	Mailpit   Mailpit `yaml:"mailpit"`
+	PrettyURL string  `yaml:"pretty_url"`
+
+	// PHPInfo / PHPMyAdmin use pointers so a missing YAML key defaults to enabled.
+	PHPInfo    *bool `yaml:"phpinfo"`
+	PHPMyAdmin *bool `yaml:"phpmyadmin"`
+}
+
+// BoolPtr returns a *bool for YAML defaults / wizard values.
+func BoolPtr(v bool) *bool { return &v }
+
+// PHPInfoEnabled reports whether /.info is exposed (default true when unset).
+func (c *Config) PHPInfoEnabled() bool {
+	if c.PHPInfo == nil {
+		return true
+	}
+	return *c.PHPInfo
+}
+
+// PHPMyAdminEnabled reports whether /phpmyadmin/ is exposed (default true when unset).
+func (c *Config) PHPMyAdminEnabled() bool {
+	if c.PHPMyAdmin == nil {
+		return true
+	}
+	return *c.PHPMyAdmin
 }
 
 type PHP struct {
@@ -183,6 +206,8 @@ func Default(name, location string) *Config {
 			SMTPPort: 1025,
 			UIPort:   8025,
 		},
+		PHPInfo:    BoolPtr(true),
+		PHPMyAdmin: BoolPtr(true),
 	}
 }
 

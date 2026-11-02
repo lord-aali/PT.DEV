@@ -19,10 +19,13 @@ func cmdCache() *cobra.Command {
 		Short: "Download and cache module binaries",
 		Long: `Cache module binaries next to the ptdev executable.
 
-  ptdev cache                       interactive: host only or all platforms
-  ptdev cache --host                this machine only
-  ptdev cache --all                 every OS/arch listed in the catalog
-  ptdev cache --invalidate-caches   wipe modules/ (asks for confirmation), then cache
+  ptdev cache                  interactive: host only or all platforms
+  ptdev cache --host           this machine only
+  ptdev cache --all            every OS/arch listed in the catalog
+  ptdev cache --invalidate     wipe modules/ (asks for confirmation), then cache
+
+Catalog URLs are fetched from the remote catalog first (see README), with the
+embedded catalog as fallback when offline.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all && host {
@@ -56,7 +59,7 @@ func cmdCache() *cobra.Command {
 	}
 	c.Flags().BoolVar(&all, "all", false, "cache binaries for all platforms in the catalog")
 	c.Flags().BoolVar(&host, "host", false, "cache binaries for this host only")
-	c.Flags().BoolVar(&invalidate, "invalidate-caches", false, "delete all cached modules after confirmation")
+	c.Flags().BoolVar(&invalidate, "invalidate", false, "delete all cached modules after confirmation")
 	return c
 }
 

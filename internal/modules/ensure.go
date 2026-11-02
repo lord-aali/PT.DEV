@@ -37,7 +37,7 @@ type Paths struct {
 // EnsureForConfig downloads modules required by the project configuration.
 // dbEngine is mariadb|mysql|postgres (empty treated as mariadb when dbEnabled).
 // Incomplete caches are re-downloaded automatically.
-func (c *Cache) EnsureForConfig(phpEnabled bool, phpVer string, apache, dbEnabled bool, dbEngine string, mailpit, https, xdebug bool) (*Paths, error) {
+func (c *Cache) EnsureForConfig(phpEnabled bool, phpVer string, apache, dbEnabled bool, dbEngine string, phpMyAdmin, mailpit, https, xdebug bool) (*Paths, error) {
 	p := &Paths{}
 	var err error
 
@@ -101,7 +101,7 @@ func (c *Cache) EnsureForConfig(phpEnabled bool, phpVer string, apache, dbEnable
 		}
 	}
 
-	if phpEnabled && dbEnabled {
+	if phpEnabled && dbEnabled && phpMyAdmin {
 		engine := strings.ToLower(strings.TrimSpace(dbEngine))
 		if engine == "" {
 			engine = "mariadb"

@@ -179,6 +179,7 @@ func runLaunch(projectPath string, openBrowser bool) error {
 	paths, err := cache.EnsureForConfig(
 		cfg.PHP.Enabled, cfg.PHP.Version,
 		cfg.Apache.Enabled, cfg.MySQL.Enabled, cfg.MySQL.NormalizedEngine(),
+		cfg.PHPMyAdminEnabled(),
 		cfg.Mailpit.Enabled, cfg.Apache.HTTPS, cfg.PHP.Xdebug,
 	)
 	if err != nil {
@@ -250,10 +251,10 @@ func runLaunch(projectPath string, openBrowser bool) error {
 		siteURL = fmt.Sprintf("%s://%s/", scheme, cfg.PrettyURL)
 	}
 	logx.Success("ready — %s", siteURL)
-	if cfg.PHP.Enabled {
+	if cfg.PHP.Enabled && cfg.PHPInfoEnabled() {
 		logx.Info("phpinfo: %s.info", siteURL)
 	}
-	if cfg.PHP.Enabled && cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() {
+	if cfg.PHP.Enabled && cfg.MySQL.Enabled && cfg.MySQL.IsMySQLFamily() && cfg.PHPMyAdminEnabled() {
 		logx.Info("phpMyAdmin (auto-login): %sphpmyadmin/", siteURL)
 	}
 	if cfg.Mailpit.Enabled {
@@ -432,6 +433,7 @@ func cmdShell() *cobra.Command {
 			paths, err := cache.EnsureForConfig(
 				cfg.PHP.Enabled, cfg.PHP.Version,
 				false, cfg.MySQL.Enabled, cfg.MySQL.NormalizedEngine(),
+				false, // phpMyAdmin not needed for shell
 				false, false, false,
 			)
 			if err != nil {
@@ -490,7 +492,7 @@ func writeComposerWrapper(dir, phpBin, phar string) error {
 	return os.WriteFile(filepath.Join(dir, "composer"), []byte(content), 0o755)
 }
 
-// normalizeLogFlag rewrites GNU-style -log / -invalidate-caches into -- forms for pflag.
+// normalizeLogFlag rewrites GNU-style -log / -invalidate into -- forms for pflag.
 func normalizeLogFlag(args []string) {
 	for i := 1; i < len(args); i++ {
 		a := args[i]
@@ -499,8 +501,10 @@ func normalizeLogFlag(args []string) {
 			args[i] = "--log"
 		case strings.HasPrefix(a, "-log="):
 			args[i] = "--log=" + strings.TrimPrefix(a, "-log=")
-		case a == "-invalidate-caches":
-			args[i] = "--invalidate-caches"
+		case a == "-invalidate":
+			args[i] = "--invalidate"
+		case a == "-invalidate-caches": // legacy alias
+			args[i] = "--invalidate"
 		}
 	}
 }

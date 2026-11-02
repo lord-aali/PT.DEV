@@ -35,10 +35,18 @@ func PrepareDataDir(cfg *config.Config, paths *modules.Paths) error {
 }
 
 func mysqlDatadirLooksValid(data string) bool {
+	// MySQL 8+ keeps the mysql schema in a single tablespace at the datadir root.
+	if _, err := os.Stat(filepath.Join(data, "mysql.ibd")); err == nil {
+		return true
+	}
+	// MariaDB / MySQL 5.x privilege tables under mysql/
 	candidates := []string{
 		filepath.Join(data, "mysql", "db.MAD"),
 		filepath.Join(data, "mysql", "db.frm"),
 		filepath.Join(data, "mysql", "db.ibd"),
+		filepath.Join(data, "mysql", "user.MAD"),
+		filepath.Join(data, "mysql", "user.frm"),
+		filepath.Join(data, "mysql", "user.ibd"),
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
@@ -78,14 +86,33 @@ func prepareMySQL(cfg *config.Config, paths *modules.Paths) error {
 	}
 
 	logx.Info("initializing %s datadir …", label)
-	if err := initializeMySQLDataDir(data, paths); err != nil {
+	if err := initializeMySQLDataDir(cfg, data, paths); err != nil {
 		return err
 	}
 	if !mysqlDatadirLooksValid(data) {
-		return fmt.Errorf("datadir init finished but system tables are missing under %s", data)
+		return fmt.Errorf("datadir init finished but system tables are missing under %s\n%s", data, datadirListing(data))
 	}
 	logx.Success("%s datadir initialized", label)
 	return nil
+}
+
+func datadirListing(data string) string {
+	entries, err := os.ReadDir(data)
+	if err != nil {
+		return "(could not list datadir)"
+	}
+	if len(entries) == 0 {
+		return "(datadir is empty)"
+	}
+	names := make([]string, 0, len(entries))
+	for i, e := range entries {
+		if i >= 20 {
+			names = append(names, "…")
+			break
+		}
+		names = append(names, e.Name())
+	}
+	return "datadir contains: " + strings.Join(names, ", ")
 }
 
 func preparePostgres(cfg *config.Config, paths *modules.Paths) error {
@@ -153,34 +180,55 @@ host    all             all             ::1/128                 trust
 // initializeMySQLDataDir bootstraps a fresh MariaDB/MySQL datadir.
 // MariaDB Windows does NOT support mysqld --initialize-insecure (unknown option;
 // it still creates partial InnoDB files then aborts — the source of prior timeouts).
-func initializeMySQLDataDir(data string, paths *modules.Paths) error {
+func initializeMySQLDataDir(cfg *config.Config, data string, paths *modules.Paths) error {
 	basedir := paths.MySQL
+	binDir := filepath.Dir(paths.MysqldBin)
+	env := append(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
+	// Oracle MySQL: --initialize-insecure only.
+	if cfg.MySQL.NormalizedEngine() == config.EngineMySQL {
+		return runMysqldInitialize(paths, basedir, data, env)
+	}
+
+	// MariaDB: prefer mariadb-install-db / mysql_install_db.
 	for _, name := range []string{"mariadb-install-db", "mysql_install_db"} {
 		bin, err := modules.FindBinary(paths.MySQL, name)
 		if err != nil {
 			continue
 		}
 		args := []string{"--datadir=" + data, "--password="}
+		// basedir helps portable Windows/Linux trees find share/english etc.
+		if basedir != "" {
+			args = append(args, "--basedir="+basedir)
+		}
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = filepath.Dir(bin)
+		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s: %v\n%s", name, err, out)
 		}
+		logx.Verbose("%s ok:\n%s", name, strings.TrimSpace(string(out)))
 		return nil
 	}
 
+	// Fallback for MariaDB builds that only ship mysqld --initialize.
+	return runMysqldInitialize(paths, basedir, data, env)
+}
+
+func runMysqldInitialize(paths *modules.Paths, basedir, data string, env []string) error {
 	cmd := exec.Command(paths.MysqldBin,
 		"--datadir="+data,
 		"--basedir="+basedir,
 		"--initialize-insecure",
 	)
 	cmd.Dir = filepath.Dir(paths.MysqldBin)
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("mysqld --initialize-insecure: %v\n%s", err, out)
 	}
+	logx.Verbose("mysqld --initialize-insecure ok:\n%s", strings.TrimSpace(string(out)))
 	return nil
 }
 
