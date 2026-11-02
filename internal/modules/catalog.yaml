@@ -60,6 +60,23 @@ php:
           url: "https://github.com/shivammathur/php-builder/releases/download/7.2/php_7.2+ubuntu24.04_arm64.tar.xz"
           filename: "php_7.2+ubuntu24.04_arm64.tar.xz"
           kind: tar.xz
+    "7.4":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://windows.php.net/downloads/releases/archives/php-7.4.33-Win32-vc15-x64.zip"
+          filename: "php-7.4.33-Win32-vc15-x64.zip"
+          kind: zip
+        - os: linux
+          arch: amd64
+          url: "https://github.com/shivammathur/php-builder/releases/download/7.4/php_7.4+ubuntu24.04.tar.xz"
+          filename: "php_7.4+ubuntu24.04.tar.xz"
+          kind: tar.xz
+        - os: linux
+          arch: arm64
+          url: "https://github.com/shivammathur/php-builder/releases/download/7.4/php_7.4+ubuntu24.04_arm64.tar.xz"
+          filename: "php_7.4+ubuntu24.04_arm64.tar.xz"
+          kind: tar.xz
     "8.1":
       artifacts:
         - os: windows
@@ -98,7 +115,7 @@ php:
       artifacts:
         - os: windows
           arch: amd64
-          url: "https://windows.php.net/downloads/releases/php-8.3.35-Win32-vs16-x64.zip"
+          url: "https://windows.php.net/downloads/releases/archives/php-8.3.35-Win32-vs16-x64.zip"
           filename: "php-8.3.35-Win32-vs16-x64.zip"
           kind: zip
         - os: linux
@@ -115,7 +132,7 @@ php:
       artifacts:
         - os: windows
           arch: amd64
-          url: "https://windows.php.net/downloads/releases/php-8.4.26-Win32-vs17-x64.zip"
+          url: "https://windows.php.net/downloads/releases/archives/php-8.4.26-Win32-vs17-x64.zip"
           filename: "php-8.4.26-Win32-vs17-x64.zip"
           kind: zip
         - os: linux
@@ -137,8 +154,6 @@ apache:
       url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.68-260920-Win64-VS18.zip"
       filename: "httpd-2.4.68-Win64-VS18.zip"
       kind: zip
-    # Official ASF dist is source-only. Portable Linux/macOS binaries from nks-hub
-    # (bin/httpd + modules). No linux/arm64 or darwin/amd64 assets in that release.
     - os: linux
       arch: amd64
       url: "https://github.com/nks-hub/webdev-console-binaries/releases/download/binaries-apache-2.4.66/httpd-2.4.66-linux-x64.tar.xz"
@@ -152,7 +167,6 @@ apache:
       kind: tar.xz
       note: "portable binary 2.4.66 (nks-hub); ASF ships source only"
 
-# MariaDB — default engine (config engine: mariadb). Catalog key stays "mysql" for cache paths.
 mysql:
   version: "11.4.5"
   artifacts:
@@ -168,9 +182,7 @@ mysql:
       filename: "mariadb-11.4.5-linux-systemd-x86_64.tar.gz"
       kind: tar.gz
       strip_components: 1
-    # No linux-arm64 / darwin / windows-arm64 packages in mariadb-11.4.5 archive listing.
 
-# Oracle MySQL Community — config engine: mysql
 mysql-community:
   version: "8.0.41"
   artifacts:
@@ -188,7 +200,6 @@ mysql-community:
       strip_components: 1
       note: "glibc 2.17+; ~860MB archive"
 
-# PostgreSQL — config engine: postgres (theseus-rs portable builds)
 postgres:
   version: "16.15.0"
   artifacts:
@@ -292,10 +303,15 @@ mkcert:
       kind: file
 
 xdebug:
-  # Windows DLLs must match PHP: TS + VS16 (8.1–8.3) or VS17 (8.4+).
-  # Source: https://xdebug.org/download — use xdebug.org/files (not downloads.xdebug.org).
-  # Linux/macOS: no prebuilt DLL; install via pecl against the cached PHP.
   versions:
+    "7.4":
+      artifacts:
+        - os: windows
+          arch: amd64
+          url: "https://xdebug.org/files/php_xdebug-3.1.6-7.4-vc15-x86_64.dll"
+          filename: "php_xdebug.dll"
+          kind: file
+          note: "last Xdebug series for PHP 7.4"
     "8.1":
       artifacts:
         - os: windows
