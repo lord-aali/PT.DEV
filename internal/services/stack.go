@@ -21,13 +21,13 @@ import (
 
 // Stack holds running services.
 type Stack struct {
-	Cfg     *config.Config
-	Paths   *modules.Paths
-	Proc    *proc.Manager
-	Proxy   *httpproxy.Server
+	Cfg   *config.Config
+	Paths *modules.Paths
+	Proc  *proc.Manager
+	Proxy *httpproxy.Server
 }
 
-// Start boots database, Mailpit, Apache according to config.
+// Start boots database, Mailpit, PHP FastCGI, Apache according to config.
 func (s *Stack) Start() error {
 	if s.Cfg.MySQL.Enabled {
 		if s.Cfg.MySQL.IsPostgres() {
@@ -43,11 +43,67 @@ func (s *Stack) Start() error {
 			return err
 		}
 	}
+	if s.Cfg.PHP.Enabled && s.Cfg.PHP.FastCGIPort != 0 {
+		if err := s.startPHPFastCGI(); err != nil {
+			return err
+		}
+	}
 	if s.Cfg.Apache.Enabled {
 		if err := s.startApache(); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *Stack) startPHPFastCGI() error {
+	phpCGI := s.Paths.PHPBin
+	cand := filepath.Join(filepath.Dir(s.Paths.PHPBin), "php-cgi")
+	if _, err := os.Stat(cand); err == nil {
+		phpCGI = cand
+	}
+	if _, err := os.Stat(cand + ".exe"); err == nil {
+		phpCGI = cand + ".exe"
+	}
+	if p, err := modules.FindBinary(s.Paths.PHP, "php-cgi"); err == nil {
+		phpCGI = p
+	}
+
+	addr := s.Cfg.PHP.FastCGIAddr()
+	cgiDir := filepath.Join(s.Cfg.RuntimePath(), "cgi")
+	phpDir := filepath.Dir(s.Paths.PHPBin)
+
+	cmd := exec.Command(phpCGI, "-b", addr)
+	cmd.Dir = phpDir
+	cmd.Env = append(os.Environ(),
+		"PHPRC="+cgiDir,
+		"PHP_INI_SCAN_DIR=",
+		"PHP_FCGI_MAX_REQUESTS=10000",
+		"PHP_FCGI_CHILDREN=4",
+		"PATH="+phpDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	logPath := filepath.Join(s.Cfg.LogsPath(), "php-fcgi.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	logx.Info("starting PHP FastCGI on %s …", addr)
+	logx.Debug("php-cgi: %s", phpCGI)
+	if err := s.Proc.Start(cmd); err != nil {
+		return fmt.Errorf("start php-cgi: %w", err)
+	}
+	if cmd.Process != nil {
+		logx.Verbose("php-cgi pid %d", cmd.Process.Pid)
+	}
+	host := s.Cfg.PHP.FastCGIHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if err := waitReady(cmd, host, s.Cfg.PHP.FastCGIPort, 20*time.Second, logPath); err != nil {
+		return fmt.Errorf("PHP FastCGI not ready: %w", err)
+	}
+	logx.Success("PHP FastCGI ready")
 	return nil
 }
 

@@ -176,6 +176,17 @@ func runLaunch(projectPath string, openBrowser bool) error {
 		logx.Verbose("HTTP body proxy will listen on :%d → httpd 127.0.0.1:%d", cfg.Apache.Port, backend)
 	}
 
+	// Persistent php-cgi FastCGI (avoids classic CGI spawn-per-request slowness).
+	if cfg.PHP.Enabled && cfg.Apache.Enabled {
+		fcgiPort, err := ports.NextFree("127.0.0.1", 9000)
+		if err != nil {
+			return fmt.Errorf("allocate PHP FastCGI port: %w", err)
+		}
+		cfg.PHP.FastCGIHost = "127.0.0.1"
+		cfg.PHP.FastCGIPort = fcgiPort
+		logx.Verbose("PHP FastCGI will listen on 127.0.0.1:%d", fcgiPort)
+	}
+
 	paths, err := cache.EnsureForConfig(
 		cfg.PHP.Enabled, cfg.PHP.Version,
 		cfg.Apache.Enabled, cfg.MySQL.Enabled, cfg.MySQL.NormalizedEngine(),

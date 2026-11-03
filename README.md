@@ -25,6 +25,8 @@ ptdev shell [path]
 `-log verbose` prints extra launch steps and tails Apache’s **Common** access log as `→ [http] METHOD path status`.  
 `-log debug` adds request/response headers and body peeks via a reverse proxy (Apache access logs cannot capture bodies), plus Apache/PHP error log tails.
 
+PHP runs through a **persistent FastCGI** `php-cgi` process (Apache `mod_proxy_fcgi`), not classic CGI. That keeps responses close to XAMPP-speed; OPcache is enabled when the DLL/SO is present.
+
 ### Module catalog
 
 On `cache` / `launch` / `new`, ptdev **prefers a remote catalog** over the copy embedded in the binary:

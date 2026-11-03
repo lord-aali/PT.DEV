@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pt-dev/ptdev/internal/config"
+	"github.com/pt-dev/ptdev/internal/logx"
 	"github.com/pt-dev/ptdev/internal/modules"
 )
 
@@ -159,6 +160,23 @@ func writePHPIni(cfg *config.Config, paths *modules.Paths) error {
 	if cfg.PHP.Xdebug && paths.XdebugDLL != "" {
 		xdebug = fmt.Sprintf("\nzend_extension=%s\nxdebug.mode=debug\nxdebug.start_with_request=trigger\n", filepath.ToSlash(paths.XdebugDLL))
 	}
+	var opcache string
+	for _, name := range []string{"php_opcache.dll", "opcache.so"} {
+		p := filepath.Join(extDir, name)
+		if _, err := os.Stat(p); err == nil {
+			opcache = fmt.Sprintf(`
+zend_extension=%s
+opcache.enable=1
+opcache.enable_cli=0
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=16
+opcache.max_accelerated_files=20000
+opcache.validate_timestamps=1
+opcache.revalidate_freq=0
+`, filepath.ToSlash(p))
+			break
+		}
+	}
 	sessions := filepath.ToSlash(cfg.SessionsPath())
 	uploads := filepath.ToSlash(cfg.UploadTmpPath())
 
@@ -184,13 +202,15 @@ max_input_time = 300
 post_max_size = 512M
 upload_max_filesize = 512M
 max_file_uploads = 100
+realpath_cache_size = 4096K
+realpath_cache_ttl = 600
 session.save_handler = files
 session.save_path = "%s"
 session.use_strict_mode = 1
 sys_temp_dir = "%s"
 upload_tmp_dir = "%s"
-%s
-`, filepath.ToSlash(filepath.Join(cfg.LogsPath(), "php.log")), filepath.ToSlash(extDir), exts, sessions, uploads, uploads, xdebug)
+%s%s
+`, filepath.ToSlash(filepath.Join(cfg.LogsPath(), "php.log")), filepath.ToSlash(extDir), exts, sessions, uploads, uploads, opcache, xdebug)
 	return os.WriteFile(filepath.Join(cfg.RuntimePath(), "php.ini"), []byte(content), 0o644)
 }
 
@@ -278,6 +298,8 @@ func writeHTTPD(cfg *config.Config, paths *modules.Paths) error {
 		{"log_config_module", "mod_log_config.so"},
 		{"actions_module", "mod_actions.so"},
 		{"cgi_module", "mod_cgi.so"},
+		{"proxy_module", "mod_proxy.so"},
+		{"proxy_fcgi_module", "mod_proxy_fcgi.so"},
 	}
 	// MPM: Apache Lounge Win builds bake mpm_winnt into httpd.exe (no .so).
 	// Linux portable builds may ship prefork/event as .so.
@@ -302,8 +324,46 @@ func writeHTTPD(cfg *config.Config, paths *modules.Paths) error {
 		mods.WriteString(line)
 	}
 
-	// Staged php-cgi + php.ini in runtime/cgi; PATH finds PHP DLLs.
-	phpHandler := fmt.Sprintf(`SetEnv PHPRC "%s"
+	phpHandler := ""
+	phpHandlerMode := "cgi"
+	fcgiAddr := cfg.PHP.FastCGIAddr()
+	proxyFCGI := loadModuleLine(serverRoot, "proxy_fcgi_module", "mod_proxy_fcgi.so") != "" &&
+		loadModuleLine(serverRoot, "proxy_module", "mod_proxy.so") != ""
+
+	switch {
+	case fcgiAddr != "" && proxyFCGI:
+		// Persistent php-cgi FastCGI — orders of magnitude faster than classic CGI.
+		phpHandlerMode = "proxy_fcgi"
+		phpHandler = fmt.Sprintf(`ProxyRequests Off
+ProxyTimeout 300
+<Proxy "fcgi://%s">
+    ProxySet timeout=300
+</Proxy>
+<FilesMatch \.php$>
+    SetHandler "proxy:fcgi://%s"
+</FilesMatch>
+`, fcgiAddr, fcgiAddr)
+	case loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so") != "":
+		mods.WriteString(loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so"))
+		phpHandlerMode = "fcgid"
+		wrap := filepath.ToSlash(PHPCGIWrapperPath(cfg))
+		phpHandler = fmt.Sprintf(`SetEnv PHPRC "%s"
+SetEnv PHP_INI_SCAN_DIR ""
+FcgidInitialEnv PHPRC %s
+FcgidInitialEnv PHP_INI_SCAN_DIR ""
+FcgidMaxRequestLen 536870912
+FcgidIOTimeout 300
+FcgidMaxProcesses 8
+FcgidMaxRequestsPerProcess 1000
+FcgidWrapper "%s" .php
+<FilesMatch \.php$>
+    SetHandler fcgid-script
+</FilesMatch>
+`, phprc, phprc, wrap)
+	default:
+		// Classic CGI (spawn php-cgi per request) — slow; last resort.
+		phpHandlerMode = "cgi"
+		phpHandler = fmt.Sprintf(`SetEnv PHPRC "%s"
 SetEnv PHP_INI_SCAN_DIR ""
 SetEnv PATH "%s"
 ScriptAlias /ptdev-cgi/ "%s/"
@@ -318,22 +378,15 @@ AddType application/x-httpd-php .php
     SetHandler application/x-httpd-php
 </FilesMatch>
 `, phprc, cgiPathEsc, wrapperDir, wrapperName, wrapperDir)
-
-	// Prefer mod_fcgid when present
-	if line := loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so"); line != "" {
-		mods.WriteString(line)
-		wrap := filepath.ToSlash(PHPCGIWrapperPath(cfg))
-		phpHandler = fmt.Sprintf(`SetEnv PHPRC "%s"
-SetEnv PHP_INI_SCAN_DIR ""
-FcgidInitialEnv PHPRC %s
-FcgidInitialEnv PHP_INI_SCAN_DIR ""
-FcgidMaxRequestLen 536870912
-FcgidIOTimeout 300
-FcgidWrapper "%s" .php
-<FilesMatch \.php$>
-    SetHandler fcgid-script
-</FilesMatch>
-`, phprc, phprc, wrap)
+	}
+	phpHandler = fmt.Sprintf("# PHP handler mode: %s\n%s", phpHandlerMode, phpHandler)
+	switch phpHandlerMode {
+	case "proxy_fcgi":
+		logx.Info("PHP via FastCGI (persistent php-cgi) — %s", fcgiAddr)
+	case "fcgid":
+		logx.Info("PHP via mod_fcgid")
+	default:
+		logx.Warn("PHP via classic CGI (slow) — FastCGI unavailable; each request spawns php-cgi")
 	}
 
 	pmaAlias := ""
@@ -352,7 +405,12 @@ Alias /phpmyadmin "%s"
 	if cfg.PHP.Enabled && cfg.PHPInfoEnabled() {
 		infoFile := filepath.ToSlash(filepath.Join(cfg.RuntimePath(), "phpinfo.php"))
 		rtDir := filepath.ToSlash(cfg.RuntimePath())
-		// /.info has no .php extension — force the PHP handler via Location.
+		infoHandler := `SetHandler application/x-httpd-php`
+		if phpHandlerMode == "proxy_fcgi" && fcgiAddr != "" {
+			infoHandler = fmt.Sprintf(`SetHandler "proxy:fcgi://%s"`, fcgiAddr)
+		} else if phpHandlerMode == "fcgid" {
+			infoHandler = `SetHandler fcgid-script`
+		}
 		phpInfoAlias = fmt.Sprintf(`
 Alias /.info "%s"
 <Directory "%s">
@@ -360,9 +418,9 @@ Alias /.info "%s"
     AllowOverride None
 </Directory>
 <Location "/.info">
-    SetHandler application/x-httpd-php
+    %s
 </Location>
-`, infoFile, rtDir)
+`, infoFile, rtDir, infoHandler)
 	}
 
 	sslBlock := ""

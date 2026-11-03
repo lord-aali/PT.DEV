@@ -65,6 +65,22 @@ type PHP struct {
 	Enabled bool   `yaml:"enabled"`
 	Version string `yaml:"version"`
 	Xdebug  bool   `yaml:"xdebug"`
+
+	// Runtime-only: persistent php-cgi FastCGI listener (proxy:fcgi).
+	FastCGIHost string `yaml:"-"`
+	FastCGIPort int    `yaml:"-"`
+}
+
+// FastCGIAddr is host:port for Apache proxy:fcgi, or empty when unset.
+func (p PHP) FastCGIAddr() string {
+	if p.FastCGIPort == 0 {
+		return ""
+	}
+	host := p.FastCGIHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s:%d", host, p.FastCGIPort)
 }
 
 type Apache struct {
