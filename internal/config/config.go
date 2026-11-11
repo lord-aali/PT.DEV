@@ -29,13 +29,16 @@ const (
 type Config struct {
 	Version   int     `yaml:"version"`
 	Name      string  `yaml:"name"`
-	Location  string  `yaml:"location"`
 	Docroot   string  `yaml:"docroot"`
 	PHP       PHP     `yaml:"php"`
 	Apache    Apache  `yaml:"apache"`
 	MySQL     MySQL   `yaml:"mysql"`
 	Mailpit   Mailpit `yaml:"mailpit"`
 	PrettyURL string  `yaml:"pretty_url"`
+
+	// Location is the project root on disk. Not saved in config.yaml — set from the
+	// path passed to `ptdev launch` / `Load` (or the wizard create path).
+	Location string `yaml:"-"`
 
 	// PHPInfo / PHPMyAdmin use pointers so a missing YAML key defaults to enabled.
 	PHPInfo    *bool `yaml:"phpinfo"`

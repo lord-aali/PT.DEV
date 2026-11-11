@@ -333,16 +333,30 @@ func writeHTTPD(cfg *config.Config, paths *modules.Paths) error {
 	switch {
 	case fcgiAddr != "" && proxyFCGI:
 		// Persistent php-cgi FastCGI — orders of magnitude faster than classic CGI.
+		// On Windows, SetHandler MUST end with "/" or Apache concatenates the drive
+		// letter onto the port: fcgi://127.0.0.1:9000A:/path/to/script.php
+		// That trailing slash makes SCRIPT_FILENAME "/A:/...", which php-cgi rejects
+		// ("No input file specified") — strip the leading slash via ProxyFCGISetEnvIf.
 		phpHandlerMode = "proxy_fcgi"
+		fcgiHandler := "proxy:fcgi://" + fcgiAddr
+		winScriptFix := ""
+		if goruntime.GOOS == "windows" {
+			fcgiHandler += "/"
+			winScriptFix = `
+# php-cgi on Windows needs "A:/path" not "/A:/path"
+ProxyFCGISetEnvIf "reqenv('SCRIPT_FILENAME') =~ m#^/([a-zA-Z]:/.*)$#" SCRIPT_FILENAME "$1"
+`
+		}
 		phpHandler = fmt.Sprintf(`ProxyRequests Off
 ProxyTimeout 300
+ProxyFCGIBackendType GENERIC
 <Proxy "fcgi://%s">
     ProxySet timeout=300
 </Proxy>
-<FilesMatch \.php$>
-    SetHandler "proxy:fcgi://%s"
+%s<FilesMatch \.php$>
+    SetHandler "%s"
 </FilesMatch>
-`, fcgiAddr, fcgiAddr)
+`, fcgiAddr, winScriptFix, fcgiHandler)
 	case loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so") != "":
 		mods.WriteString(loadModuleLine(serverRoot, "fcgid_module", "mod_fcgid.so"))
 		phpHandlerMode = "fcgid"
@@ -407,7 +421,11 @@ Alias /phpmyadmin "%s"
 		rtDir := filepath.ToSlash(cfg.RuntimePath())
 		infoHandler := `SetHandler application/x-httpd-php`
 		if phpHandlerMode == "proxy_fcgi" && fcgiAddr != "" {
-			infoHandler = fmt.Sprintf(`SetHandler "proxy:fcgi://%s"`, fcgiAddr)
+			h := "proxy:fcgi://" + fcgiAddr
+			if goruntime.GOOS == "windows" {
+				h += "/"
+			}
+			infoHandler = fmt.Sprintf(`SetHandler "%s"`, h)
 		} else if phpHandlerMode == "fcgid" {
 			infoHandler = `SetHandler fcgid-script`
 		}
