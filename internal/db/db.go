@@ -191,16 +191,14 @@ func initializeMySQLDataDir(cfg *config.Config, data string, paths *modules.Path
 	}
 
 	// MariaDB: prefer mariadb-install-db / mysql_install_db.
+	// Windows mariadb-install-db rejects --basedir (unknown variable); it infers
+	// basedir from the exe path when cwd is the bin/ directory.
 	for _, name := range []string{"mariadb-install-db", "mysql_install_db"} {
 		bin, err := modules.FindBinary(paths.MySQL, name)
 		if err != nil {
 			continue
 		}
 		args := []string{"--datadir=" + data, "--password="}
-		// basedir helps portable Windows/Linux trees find share/english etc.
-		if basedir != "" {
-			args = append(args, "--basedir="+basedir)
-		}
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = filepath.Dir(bin)
 		cmd.Env = env
